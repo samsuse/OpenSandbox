@@ -408,7 +408,7 @@ Phase 2:
 ## Upgrade & Migration Strategy
 
 1. Backward compatibility is preserved by default:
-   - `auth.mode = api_key_only` keeps existing behavior.
+   - `auth.mode = "api_key_only"` keeps existing behavior.
 2. User auth path is opt-in through configuration.
 3. Existing SDK/automation clients continue using `OPEN-SANDBOX-API-KEY`.
 4. Enabling console/user auth does not require lifecycle API contract breaks.
