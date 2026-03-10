@@ -42,6 +42,8 @@ The egress control is implemented as a **Sidecar** that shares the network names
 - Mode (`OPENSANDBOX_EGRESS_MODE`, default `dns`):
   - `dns`: DNS proxy only, no nftables (IP/CIDR rules have no effect at L2).
   - `dns+nft`: enable nftables; if nft apply fails, fallback to `dns`. IP/CIDR enforcement and DoH/DoT blocking require this mode.
+- **Nameserver exempt**  
+  Set `OPENSANDBOX_EGRESS_NAMESERVER_EXEMPT` to a comma-separated list of **nameserver IPs** (e.g. `26.26.26.26` or `26.26.26.26,100.100.2.116`). Only single IPs are supported; CIDR entries are ignored. Traffic to these IPs on port 53 is not redirected to the proxy (iptables RETURN). In `dns+nft` mode, these IPs are also merged into the nft allow set so proxy upstream traffic to them (sent without SO_MARK) is accepted. Use when the upstream is reachable only via a specific route (e.g. tunnel) and SO_MARK would send proxy traffic elsewhere.
 - **DNS and nft mode (nameserver whitelist)**  
   In `dns+nft` mode, the sidecar automatically allows:
   - **127.0.0.1** — so packets redirected by iptables to the proxy (127.0.0.1:15353) are accepted by nft.
@@ -178,6 +180,5 @@ More details in [docs/benchmark.md](docs/benchmark.md).
 
 - **"iptables setup failed"**: Ensure the sidecar container has `--cap-add=NET_ADMIN`.
 - **DNS resolution fails for all domains**:  
-  - Check if the upstream DNS (from `/etc/resolv.conf`) is reachable.  
-  - In `dns+nft` mode, the sidecar whitelists nameserver IPs from resolv.conf at startup; check logs for `[dns] whitelisting proxy listen + N nameserver(s)` and ensure `/etc/resolv.conf` is readable and contains valid, reachable nameservers. The proxy prefers the first non-loopback nameserver from resolv.conf; if only loopback exists (e.g. Docker 127.0.0.11), it is used (proxy upstream traffic bypasses the redirect). Fallback to 8.8.8.8 only when resolv.conf is empty or unreadable.
+  Check upstream reachability from the sidecar (`ip route`, `dig @<upstream> . NS +timeout=3`). In `dns+nft` mode, check logs for `[dns] whitelisting proxy listen + N nameserver(s)`.
 - **Traffic not blocked**: If nftables apply fails, the sidecar falls back to dns; check logs, `nft list table inet opensandbox`, and `CAP_NET_ADMIN`.
