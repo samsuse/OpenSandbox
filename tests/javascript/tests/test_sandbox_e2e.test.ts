@@ -687,6 +687,47 @@ test("02b command env injection", async () => {
   expect(injectedOutput).toBe(envValue);
 });
 
+test("02c bash session API: cwd and env persistence", async () => {
+  if (!sandbox) throw new Error("sandbox not created");
+
+  const sid = await sandbox.commands.createSession({ cwd: "/tmp" });
+  expect(typeof sid).toBe("string");
+  expect(sid.length).toBeGreaterThan(0);
+
+  let run = await sandbox.commands.runInSession(sid, "pwd");
+  expect(run.error).toBeUndefined();
+  expect(run.logs.stdout.map((m) => m.text).join("").trim()).toBe("/tmp");
+
+  run = await sandbox.commands.runInSession(sid, "pwd", { cwd: "/var" });
+  expect(run.error).toBeUndefined();
+  expect(run.logs.stdout.map((m) => m.text).join("").trim()).toBe("/var");
+
+  run = await sandbox.commands.runInSession(sid, "pwd", { cwd: "/tmp" });
+  expect(run.error).toBeUndefined();
+  expect(run.logs.stdout.map((m) => m.text).join("").trim()).toBe("/tmp");
+
+  run = await sandbox.commands.runInSession(
+    sid,
+    "export E2E_SESSION_ENV=session-env-ok"
+  );
+  expect(run.error).toBeUndefined();
+
+  run = await sandbox.commands.runInSession(sid, "echo $E2E_SESSION_ENV");
+  expect(run.error).toBeUndefined();
+  expect(run.logs.stdout.map((m) => m.text).join("").trim()).toBe(
+    "session-env-ok"
+  );
+
+  const sid2 = await sandbox.commands.createSession({ cwd: "/var" });
+  expect(typeof sid2).toBe("string");
+  run = await sandbox.commands.runInSession(sid2, "pwd");
+  expect(run.error).toBeUndefined();
+  expect(run.logs.stdout.map((m) => m.text).join("").trim()).toBe("/var");
+
+  await sandbox.commands.deleteSession(sid);
+  await sandbox.commands.deleteSession(sid2);
+});
+
 test("03 filesystem operations: CRUD + replace/move/delete + range + stream", async () => {
   if (!sandbox) throw new Error("sandbox not created");
 

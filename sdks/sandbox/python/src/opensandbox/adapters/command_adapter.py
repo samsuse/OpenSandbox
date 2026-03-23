@@ -72,6 +72,8 @@ class CommandsAdapter(Commands):
 
     RUN_COMMAND_PATH = "/command"
     INTERRUPT_COMMAND_PATH = "/command/{execution_id}/interrupt"
+    SESSION_PATH = "/session"
+    RUN_IN_SESSION_PATH = "/session/{session_id}/run"
 
     def __init__(
         self,
@@ -286,4 +288,120 @@ class CommandsAdapter(Commands):
             return CommandLogs(content=content, cursor=next_cursor)
         except Exception as e:
             logger.error("Failed to get command logs", exc_info=e)
+            raise ExceptionConverter.to_sandbox_exception(e) from e
+
+    async def create_session(self, *, cwd: str | None = None) -> str:
+        from opensandbox.api.execd.api.code_interpreting.create_session import (
+            asyncio as create_session_asyncio,
+        )
+        from opensandbox.api.execd.models.create_session_request import (
+            CreateSessionRequest,
+        )
+        from opensandbox.api.execd.models.create_session_response import (
+            CreateSessionResponse,
+        )
+        from opensandbox.api.execd.types import UNSET
+
+        body = CreateSessionRequest(cwd=cwd) if cwd else UNSET
+        try:
+            client = await self._get_client()
+            parsed = await create_session_asyncio(client=client, body=body)
+            if parsed is None:
+                raise SandboxApiException(
+                    message="create_session returned no body",
+                    status_code=0,
+                )
+            if isinstance(parsed, CreateSessionResponse):
+                return parsed.session_id
+            handle_api_error(parsed, "create_session")
+            raise SandboxApiException(
+                message="create_session unexpected response",
+                status_code=200,
+            )
+        except Exception as e:
+            raise ExceptionConverter.to_sandbox_exception(e) from e
+
+    async def run_in_session(
+        self,
+        session_id: str,
+        code: str,
+        *,
+        cwd: str | None = None,
+        timeout_ms: int | None = None,
+        handlers: ExecutionHandlers | None = None,
+    ) -> Execution:
+        if not (session_id and session_id.strip()):
+            raise InvalidArgumentException("session_id cannot be empty")
+        if not (code and code.strip()):
+            raise InvalidArgumentException("code cannot be empty")
+
+        from opensandbox.api.execd.models.run_in_session_request import (
+            RunInSessionRequest,
+        )
+        from opensandbox.api.execd.types import UNSET
+
+        body = RunInSessionRequest(
+            code=code,
+            cwd=cwd if cwd else UNSET,
+            timeout_ms=timeout_ms if timeout_ms is not None else UNSET,
+        )
+        url = self._get_execd_url(
+            self.RUN_IN_SESSION_PATH.format(session_id=session_id)
+        )
+        execution = Execution(
+            id=None,
+            execution_count=None,
+            result=[],
+            error=None,
+        )
+        try:
+            client = await self._get_sse_client()
+            async with client.stream("POST", url, json=body.to_dict()) as response:
+                if response.status_code != 200:
+                    await response.aread()
+                    error_body = response.text
+                    logger.error(
+                        "run_in_session failed. Status: %s, Body: %s",
+                        response.status_code,
+                        error_body,
+                    )
+                    raise SandboxApiException(
+                        message=f"run_in_session failed. Status: {response.status_code}",
+                        status_code=response.status_code,
+                        request_id=extract_request_id(response.headers),
+                    )
+                dispatcher = ExecutionEventDispatcher(execution, handlers)
+                async for line in response.aiter_lines():
+                    if not line.strip():
+                        continue
+                    data = line
+                    if data.startswith("data:"):
+                        data = data[5:].strip()
+                    try:
+                        event_dict = json.loads(data)
+                        event_node = EventNode(**event_dict)
+                        await dispatcher.dispatch(event_node)
+                    except Exception as e:
+                        logger.error(
+                            "Failed to parse SSE line: %s", line, exc_info=e
+                        )
+            return execution
+        except Exception as e:
+            raise ExceptionConverter.to_sandbox_exception(e) from e
+
+    async def delete_session(self, session_id: str) -> None:
+        if not (session_id and session_id.strip()):
+            raise InvalidArgumentException("session_id cannot be empty")
+        from opensandbox.api.execd.api.code_interpreting.delete_session import (
+            asyncio as delete_session_asyncio,
+        )
+
+        try:
+            client = await self._get_client()
+            parsed = await delete_session_asyncio(
+                client=client, session_id=session_id
+            )
+            if parsed is not None:
+                handle_api_error(parsed, "delete_session")
+        except Exception as e:
             raise ExceptionConverter.to_sandbox_exception(e) from e

@@ -40,6 +40,8 @@ type ApiCommandStatusOk =
   ExecdPaths["/command/status/{id}"]["get"]["responses"][200]["content"]["application/json"];
 type ApiCommandLogsOk =
   ExecdPaths["/command/{id}/logs"]["get"]["responses"][200]["content"]["text/plain"];
+type ApiCreateSessionOk =
+  ExecdPaths["/session"]["post"]["responses"][200]["content"]["application/json"];
 
 function toRunCommandRequest(command: string, opts?: RunCommandOpts): ApiRunCommandRequest {
   if (opts?.gid != null && opts.uid == null) {
@@ -187,5 +189,86 @@ export class CommandsAdapter implements ExecdCommands {
     }
 
     return execution;
+  }
+
+  async createSession(options?: { cwd?: string }): Promise<string> {
+    const body = options?.cwd != null ? { cwd: options.cwd } : {};
+    const { data, error, response } = await this.client.POST("/session", {
+      body,
+    });
+    throwOnOpenApiFetchError({ error, response }, "Create session failed");
+    const ok = data as ApiCreateSessionOk | undefined;
+    if (!ok || typeof (ok as { session_id?: string }).session_id !== "string") {
+      throw new Error("Create session failed: unexpected response shape");
+    }
+    return (ok as { session_id: string }).session_id;
+  }
+
+  async *runInSessionStream(
+    sessionId: string,
+    code: string,
+    opts?: { cwd?: string; timeoutMs?: number },
+    signal?: AbortSignal,
+  ): AsyncIterable<ServerStreamEvent> {
+    const url = joinUrl(
+      this.opts.baseUrl,
+      `/session/${encodeURIComponent(sessionId)}/run`,
+    );
+    const body: { code: string; cwd?: string; timeout_ms?: number } = {
+      code,
+    };
+    if (opts?.cwd != null) body.cwd = opts.cwd;
+    if (opts?.timeoutMs != null) body.timeout_ms = opts.timeoutMs;
+
+    const res = await this.fetch(url, {
+      method: "POST",
+      headers: {
+        accept: "text/event-stream",
+        "content-type": "application/json",
+        ...(this.opts.headers ?? {}),
+      },
+      body: JSON.stringify(body),
+      signal,
+    });
+
+    for await (const ev of parseJsonEventStream<ServerStreamEvent>(res, {
+      fallbackErrorMessage: "Run in session failed",
+    })) {
+      yield ev;
+    }
+  }
+
+  async runInSession(
+    sessionId: string,
+    code: string,
+    options?: { cwd?: string; timeoutMs?: number },
+    handlers?: ExecutionHandlers,
+    signal?: AbortSignal,
+  ): Promise<CommandExecution> {
+    const execution: CommandExecution = {
+      logs: { stdout: [], stderr: [] },
+      result: [],
+    };
+    const dispatcher = new ExecutionEventDispatcher(execution, handlers);
+    for await (const ev of this.runInSessionStream(
+      sessionId,
+      code,
+      options,
+      signal,
+    )) {
+      if (ev.type === "init" && (ev.text ?? "") === "" && execution.id) {
+        (ev as any).text = execution.id;
+      }
+      await dispatcher.dispatch(ev as any);
+    }
+    return execution;
+  }
+
+  async deleteSession(sessionId: string): Promise<void> {
+    const { error, response } = await this.client.DELETE(
+      "/session/{sessionId}",
+      { params: { path: { sessionId } } },
+    );
+    throwOnOpenApiFetchError({ error, response }, "Delete session failed");
   }
 }

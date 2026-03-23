@@ -112,3 +112,57 @@ class Commands(Protocol):
             SandboxException: if the operation fails
         """
         ...
+
+    async def create_session(self, *, cwd: str | None = None) -> str:
+        """
+        Create a bash session. Returns session_id for run_in_session and delete_session.
+
+        Args:
+            cwd: Optional working directory for the session.
+
+        Returns:
+            Session ID string.
+
+        Raises:
+            SandboxException: if the operation fails.
+        """
+        ...
+
+    async def run_in_session(
+        self,
+        session_id: str,
+        code: str,
+        *,
+        cwd: str | None = None,
+        timeout_ms: int | None = None,
+        handlers: ExecutionHandlers | None = None,
+    ) -> Execution:
+        """
+        Run shell code in an existing bash session (streams output via SSE).
+
+        Args:
+            session_id: Session ID from create_session.
+            code: Shell code to execute.
+            cwd: Optional working directory override for this run.
+            timeout_ms: Optional max execution time in milliseconds.
+            handlers: Optional async handlers for streaming events.
+
+        Returns:
+            Execution handle with logs and results.
+
+        Raises:
+            SandboxException: if the operation fails.
+        """
+        ...
+
+    async def delete_session(self, session_id: str) -> None:
+        """
+        Delete a bash session and release resources.
+
+        Args:
+            session_id: Session ID to delete.
+
+        Raises:
+            SandboxException: if the operation fails.
+        """
+        ...

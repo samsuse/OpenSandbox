@@ -116,3 +116,23 @@ class CommandsSync(Protocol):
             SandboxException: If the operation fails.
         """
         ...
+
+    def create_session(self, *, cwd: str | None = None) -> str:
+        """Create a bash session. Returns session_id for run_in_session and delete_session."""
+        ...
+
+    def run_in_session(
+        self,
+        session_id: str,
+        code: str,
+        *,
+        cwd: str | None = None,
+        timeout_ms: int | None = None,
+        handlers: ExecutionHandlersSync | None = None,
+    ) -> Execution:
+        """Run shell code in an existing bash session (streams output via SSE)."""
+        ...
+
+    def delete_session(self, session_id: str) -> None:
+        """Delete a bash session and release resources."""
+        ...

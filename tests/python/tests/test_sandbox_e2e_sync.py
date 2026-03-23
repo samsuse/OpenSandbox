@@ -847,6 +847,68 @@ class TestSandboxE2ESync:
         assert "nonexistent-command-that-does-not-exist" in stderr_messages[0].text
 
     @pytest.mark.timeout(120)
+    @pytest.mark.order(2)
+    def test_02c_bash_session_api(self) -> None:
+        """Test create_session / run_in_session / delete_session: verify cwd is passed and applied (sync).
+        Current execd session API supports cwd only (no env); this test asserts cwd for both
+        create_session and run_in_session.
+        """
+        TestSandboxE2ESync._ensure_sandbox_created()
+        sandbox = TestSandboxE2ESync.sandbox
+        assert sandbox is not None
+
+        logger.info("=" * 80)
+        logger.info("TEST 2c: Bash session API (sync) — verify cwd is passed and applied")
+        logger.info("=" * 80)
+
+        logger.info("Step 1: Create session with cwd=/tmp and verify session starts in that directory")
+        sid = sandbox.commands.create_session(cwd="/tmp")
+        assert sid is not None and isinstance(sid, str) and len(sid) > 0
+        out_pwd = sandbox.commands.run_in_session(sid, "pwd")
+        assert out_pwd.error is None, f"pwd failed: {out_pwd.error}"
+        pwd_line = "".join(m.text for m in out_pwd.logs.stdout).strip()
+        assert pwd_line == "/tmp", f"create_session(cwd=/tmp) should run in /tmp, got: {pwd_line!r}"
+        logger.info("✓ create_session(cwd=/tmp) applied: pwd => %s", pwd_line)
+
+        logger.info("Step 2: run_in_session with cwd override — run in /var and verify")
+        out_var = sandbox.commands.run_in_session(sid, "pwd", cwd="/var")
+        assert out_var.error is None
+        var_line = "".join(m.text for m in out_var.logs.stdout).strip()
+        assert var_line == "/var", f"run_in_session(..., cwd=/var) should run in /var, got: {var_line!r}"
+        logger.info("✓ run_in_session(..., cwd=/var) applied: pwd => %s", var_line)
+
+        logger.info("Step 3: run_in_session with cwd=/tmp — verify override per run")
+        out_tmp = sandbox.commands.run_in_session(sid, "pwd", cwd="/tmp")
+        assert out_tmp.error is None
+        tmp_line = "".join(m.text for m in out_tmp.logs.stdout).strip()
+        assert tmp_line == "/tmp", f"run_in_session(..., cwd=/tmp) should run in /tmp, got: {tmp_line!r}"
+        logger.info("✓ run_in_session(..., cwd=/tmp) applied: pwd => %s", tmp_line)
+
+        logger.info("Step 3b: Export env in one run, read in next run — verify session state (env) persists")
+        sandbox.commands.run_in_session(sid, "export E2E_SESSION_ENV=session-env-ok")
+        out_env = sandbox.commands.run_in_session(sid, "echo $E2E_SESSION_ENV")
+        assert out_env.error is None
+        env_line = "".join(m.text for m in out_env.logs.stdout).strip()
+        assert env_line == "session-env-ok", f"env set in previous run should be visible, got: {env_line!r}"
+        logger.info("✓ session env persists across run_in_session: echo $E2E_SESSION_ENV => %s", env_line)
+
+        logger.info("Step 4: New session with cwd=/var — verify create_session cwd again")
+        sid2 = sandbox.commands.create_session(cwd="/var")
+        assert sid2 is not None
+        out_var2 = sandbox.commands.run_in_session(sid2, "pwd")
+        assert out_var2.error is None
+        var2_line = "".join(m.text for m in out_var2.logs.stdout).strip()
+        assert var2_line == "/var", f"create_session(cwd=/var) should run in /var, got: {var2_line!r}"
+        logger.info("✓ create_session(cwd=/var) applied: pwd => %s", var2_line)
+
+        logger.info("Step 5: Delete both sessions")
+        sandbox.commands.delete_session(sid)
+        sandbox.commands.delete_session(sid2)
+        logger.info("✓ Sessions deleted")
+
+        logger.info("TEST 2c PASSED: cwd passing verified for create_session and run_in_session (sync)")
+
+    @pytest.mark.timeout(120)
     @pytest.mark.order(3)
     def test_02a_command_status_and_logs(self) -> None:
         """Test command status + background logs (sync)."""
