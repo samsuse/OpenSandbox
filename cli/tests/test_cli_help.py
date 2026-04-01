@@ -80,13 +80,19 @@ class TestCommandHelp:
     def test_command_help(self, runner: CliRunner) -> None:
         result = runner.invoke(cli, ["command", "--help"])
         assert result.exit_code == 0
-        for subcmd in ("run", "status", "logs", "interrupt"):
+        for subcmd in ("run", "status", "logs", "interrupt", "session"):
             assert subcmd in result.output
 
     @pytest.mark.parametrize("subcmd", ["run", "status", "logs", "interrupt"])
     def test_command_subcommand_help(self, runner: CliRunner, subcmd: str) -> None:
         result = runner.invoke(cli, ["command", subcmd, "--help"])
         assert result.exit_code == 0
+
+    def test_command_session_help(self, runner: CliRunner) -> None:
+        result = runner.invoke(cli, ["command", "session", "--help"])
+        assert result.exit_code == 0
+        for subcmd in ("create", "run", "delete"):
+            assert subcmd in result.output
 
 
 # ---------------------------------------------------------------------------

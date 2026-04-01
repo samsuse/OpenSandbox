@@ -164,6 +164,7 @@ osb sandbox list
 | `status`    | Get command execution status              |
 | `logs`      | Get background command logs               |
 | `interrupt` | Interrupt a running command               |
+| `session`   | Manage persistent bash sessions           |
 
 ### `osb exec` — Quick Command Shortcut
 
@@ -172,6 +173,21 @@ osb exec <sandbox-id> -- <command>
 ```
 
 Shortcut for `osb command run`. Everything after `--` is passed as the command.
+
+Persistent shell sessions:
+
+```bash
+# Create a bash session
+osb command session create <sandbox-id>
+
+# Reuse that session for multiple commands
+osb command session run <sandbox-id> <session-id> -- pwd
+osb command session run <sandbox-id> <session-id> -- export FOO=bar
+osb command session run <sandbox-id> <session-id> -- sh -c 'echo $FOO'
+
+# Delete the session when done
+osb command session delete <sandbox-id> <session-id>
+```
 
 ### `osb file` — File Operations
 

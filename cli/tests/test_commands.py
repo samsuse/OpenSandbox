@@ -402,6 +402,48 @@ class TestCommandInterrupt:
         assert "Interrupted: exec-789" in result.output
 
 
+class TestCommandSession:
+    def test_session_create(self, runner: CliRunner) -> None:
+        mock_sb = MagicMock()
+        mock_sb.id = "sb-1"
+        mock_sb.commands.create_session.return_value = "sess-123"
+        result = _invoke(
+            runner,
+            ["-o", "json", "command", "session", "create", "sb-1", "--workdir", "/workspace"],
+            sandbox=mock_sb,
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["session_id"] == "sess-123"
+        mock_sb.commands.create_session.assert_called_once_with(working_directory="/workspace")
+
+    def test_session_run(self, runner: CliRunner) -> None:
+        mock_sb = MagicMock()
+        mock_execution = MagicMock()
+        mock_execution.error = None
+        mock_sb.commands.run_in_session.return_value = mock_execution
+        result = _invoke(
+            runner,
+            ["command", "session", "run", "sb-1", "sess-123", "--timeout", "30s", "--", "pwd"],
+            sandbox=mock_sb,
+        )
+        assert result.exit_code == 0
+        mock_sb.commands.run_in_session.assert_called_once()
+        assert mock_sb.commands.run_in_session.call_args.args[:2] == ("sess-123", "pwd")
+        assert mock_sb.commands.run_in_session.call_args.kwargs["timeout"] == 30000
+
+    def test_session_delete(self, runner: CliRunner) -> None:
+        mock_sb = MagicMock()
+        result = _invoke(
+            runner,
+            ["command", "session", "delete", "sb-1", "sess-123"],
+            sandbox=mock_sb,
+        )
+        assert result.exit_code == 0
+        mock_sb.commands.delete_session.assert_called_once_with("sess-123")
+        assert "Deleted session: sess-123" in result.output
+
+
 # ---------------------------------------------------------------------------
 # DevOps diagnostics
 # ---------------------------------------------------------------------------
