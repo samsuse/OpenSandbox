@@ -144,6 +144,38 @@ func TestHandleGet_ReturnsEnforcementMode(t *testing.T) {
 	require.Contains(t, string(body), `"enforcementMode":"dns"`, "expected enforcementMode dns in response")
 }
 
+func TestHandleGet_RedactsAPIProxyIdentity(t *testing.T) {
+	proxy := &stubProxy{updated: &policy.NetworkPolicy{
+		DefaultAction: policy.ActionDeny,
+		APIProxy: &policy.APIProxy{
+			Enabled: true,
+			Identity: policy.APIProxyIdentity{
+				Organization:   "acme",
+				OrganizationID: "org-123",
+				UserEmail:      "alice@example.com",
+			},
+			Routes: []policy.APIProxyRoute{{
+				PathPrefix:  "/api/reason/",
+				UpstreamURL: "http://reason.reason-dev.svc.cluster.local:8080",
+			}},
+		},
+	}}
+	srv := &policyServer{proxy: proxy, nft: nil, enforcementMode: "dns+nft"}
+
+	req := httptest.NewRequest(http.MethodGet, "/policy", nil)
+	w := httptest.NewRecorder()
+
+	srv.handlePolicy(w, req)
+
+	resp := w.Result()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.Contains(t, string(body), `"api_proxy":{"enabled":true,"identity_ready":true,"route_count":1}`)
+	require.NotContains(t, string(body), "alice@example.com")
+	require.NotContains(t, string(body), "org-123")
+}
+
 func TestHandlePatch_MergesAndApplies(t *testing.T) {
 	initial := &policy.NetworkPolicy{
 		DefaultAction: policy.ActionDeny,
@@ -199,6 +231,34 @@ func TestHandlePatch_DomainCaseOverride(t *testing.T) {
 	require.Len(t, proxy.updated.Egress, 1, "expected deduped rule count 1")
 	require.Equal(t, policy.ActionAllow, proxy.updated.Egress[0].Action, "expected allow action")
 	require.Equal(t, "example.com", proxy.updated.Egress[0].Target, "expected allow example.com to override")
+}
+
+func TestHandlePatch_RejectsAPIProxyMutation(t *testing.T) {
+	initial := &policy.NetworkPolicy{
+		DefaultAction: policy.ActionDeny,
+		APIProxy: &policy.APIProxy{
+			Enabled: true,
+			Identity: policy.APIProxyIdentity{
+				Organization:   "acme",
+				OrganizationID: "org-123",
+				UserEmail:      "alice@example.com",
+			},
+		},
+	}
+	proxy := &stubProxy{updated: initial}
+	nft := &stubNft{}
+	srv := &policyServer{proxy: proxy, nft: nft, enforcementMode: "dns+nft"}
+
+	body := `{"api_proxy":{"enabled":false}}`
+	req := httptest.NewRequest(http.MethodPatch, "/policy", strings.NewReader(body))
+	w := httptest.NewRecorder()
+
+	srv.handlePolicy(w, req)
+
+	resp := w.Result()
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	require.Equal(t, 0, nft.calls)
+	require.True(t, proxy.updated.APIProxy.Enabled)
 }
 
 func TestMaxEgressRulesFromEnv(t *testing.T) {

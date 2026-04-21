@@ -56,6 +56,45 @@ func patchMergedPolicy(base *policy.NetworkPolicy, patchRules []policy.EgressRul
 	return policy.ParsePolicy(string(rawMerged))
 }
 
+type apiProxyStatus struct {
+	Enabled       bool `json:"enabled"`
+	IdentityReady bool `json:"identity_ready"`
+	RouteCount    int  `json:"route_count"`
+}
+
+func policyWithoutAPIProxy(p *policy.NetworkPolicy) *policy.NetworkPolicy {
+	if p == nil {
+		return nil
+	}
+	copyPolicy := *p
+	copyPolicy.Egress = append([]policy.EgressRule(nil), p.Egress...)
+	copyPolicy.APIProxy = nil
+	return &copyPolicy
+}
+
+func apiProxyStatusFromPolicy(p *policy.NetworkPolicy) *apiProxyStatus {
+	if p == nil || p.APIProxy == nil {
+		return &apiProxyStatus{}
+	}
+	return &apiProxyStatus{
+		Enabled:       p.APIProxy.Enabled,
+		IdentityReady: p.APIProxy.Identity.IsReady(),
+		RouteCount:    len(p.APIProxy.Routes),
+	}
+}
+
+func patchContainsAPIProxy(raw string) (bool, error) {
+	if !strings.HasPrefix(strings.TrimSpace(raw), "{") {
+		return false, nil
+	}
+	var body map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(raw), &body); err != nil {
+		return false, err
+	}
+	_, ok := body["api_proxy"]
+	return ok, nil
+}
+
 // mergeEgressRules joins base rules and additions, deduping by target (last writer wins).
 func mergeEgressRules(base, additions []policy.EgressRule) []policy.EgressRule {
 	if len(additions) == 0 {

@@ -16,6 +16,8 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"net/http"
 	"net/netip"
 	"os"
 	"os/signal"
@@ -27,6 +29,7 @@ import (
 	_ "github.com/alibaba/opensandbox/internal/safego"
 	_ "go.uber.org/automaxprocs/maxprocs"
 
+	"github.com/alibaba/opensandbox/egress/apiproxy"
 	"github.com/alibaba/opensandbox/egress/pkg/constants"
 	"github.com/alibaba/opensandbox/egress/pkg/dnsproxy"
 	"github.com/alibaba/opensandbox/egress/pkg/events"
@@ -115,6 +118,19 @@ func main() {
 	}
 	log.Infof("policy server listening on %s (POST /policy)", httpAddr)
 
+	var apiProxySrv *http.Server
+	if constants.IsTruthy(os.Getenv(constants.EnvEgressAPIProxyEnabled)) {
+		if err := validateAPIProxyRuntime(mode, os.Getenv(constants.EnvEgressToken), os.Getenv(constants.EnvEgressPolicyFile)); err != nil {
+			log.Fatalf("failed to enable api proxy: %v", err)
+		}
+		apiProxyAddr := envOrDefault(constants.EnvEgressAPIProxyListenAddr, constants.DefaultEgressAPIProxyAddr)
+		apiProxySrv, err = apiproxy.StartServer(proxy, apiProxyAddr)
+		if err != nil {
+			log.Fatalf("failed to start api proxy server: %v", err)
+		}
+		log.Infof("api proxy listening on %s", apiProxyAddr)
+	}
+
 	mitm, err := startMitmproxyTransparentIfEnabled()
 	if err != nil {
 		log.Fatalf("mitmproxy transparent: %v", err)
@@ -125,7 +141,7 @@ func main() {
 		log.Errorf("startup hooks (post) error: %v", err)
 	}
 
-	waitForShutdown(ctx, proxy, policySrv, exemptDst, nftMgr, mitm)
+	waitForShutdown(ctx, proxy, policySrv, apiProxySrv, exemptDst, nftMgr, mitm)
 }
 
 func withLogger(ctx context.Context) context.Context {
@@ -165,4 +181,17 @@ func parseMode() string {
 		return constants.PolicyDnsOnly
 	}
 	return normalized
+}
+
+func validateAPIProxyRuntime(mode, token, policyFile string) error {
+	if strings.TrimSpace(token) == "" {
+		return fmt.Errorf("%s must be set when api proxy is enabled", constants.EnvEgressToken)
+	}
+	if strings.TrimSpace(policyFile) != "" {
+		return fmt.Errorf("%s must be empty when api proxy is enabled", constants.EnvEgressPolicyFile)
+	}
+	if mode != constants.PolicyDnsNft {
+		return fmt.Errorf("api proxy requires %s=%s", constants.EnvEgressMode, constants.PolicyDnsNft)
+	}
+	return nil
 }

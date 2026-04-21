@@ -34,7 +34,7 @@ const (
 	defaultMitmShutdownTimeout   = 5 * time.Second
 )
 
-func waitForShutdown(ctx context.Context, proxy *dnsproxy.Proxy, policySrv *http.Server, exemptDst []netip.Addr, applier nftApplier, mitm *mitmTransparent) {
+func waitForShutdown(ctx context.Context, proxy *dnsproxy.Proxy, policySrv *http.Server, apiProxySrv *http.Server, exemptDst []netip.Addr, applier nftApplier, mitm *mitmTransparent) {
 	<-ctx.Done()
 	log.Infof("received shutdown signal; beginning graceful shutdown")
 
@@ -44,6 +44,11 @@ func waitForShutdown(ctx context.Context, proxy *dnsproxy.Proxy, policySrv *http
 	if policySrv != nil {
 		if err := policySrv.Shutdown(policyShutdownCtx); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Errorf("policy server shutdown error: %v", err)
+		}
+	}
+	if apiProxySrv != nil {
+		if err := apiProxySrv.Shutdown(policyShutdownCtx); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Errorf("api proxy server shutdown error: %v", err)
 		}
 	}
 	if err := proxy.Shutdown(); err != nil {

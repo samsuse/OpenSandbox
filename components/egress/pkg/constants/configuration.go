@@ -21,19 +21,21 @@ import (
 )
 
 const (
-	EnvBlockDoH443             = "OPENSANDBOX_EGRESS_BLOCK_DOH_443"
-	EnvDoHBlocklist            = "OPENSANDBOX_EGRESS_DOH_BLOCKLIST"
-	EnvEgressMode              = "OPENSANDBOX_EGRESS_MODE"
-	EnvEgressHTTPAddr          = "OPENSANDBOX_EGRESS_HTTP_ADDR"
-	EnvEgressToken             = "OPENSANDBOX_EGRESS_TOKEN"
-	EnvEgressRules             = "OPENSANDBOX_EGRESS_RULES"
-	EnvEgressPolicyFile        = "OPENSANDBOX_EGRESS_POLICY_FILE"
-	EnvEgressLogLevel          = "OPENSANDBOX_EGRESS_LOG_LEVEL"
-	EnvMaxEgressRules          = "OPENSANDBOX_EGRESS_MAX_RULES"
-	EnvBlockedWebhook          = "OPENSANDBOX_EGRESS_DENY_WEBHOOK"
-	EnvSandboxID               = "OPENSANDBOX_EGRESS_SANDBOX_ID"
-	EnvEgressMetricsExtraAttrs = "OPENSANDBOX_EGRESS_METRICS_EXTRA_ATTRS"
-	EnvNameserverExempt        = "OPENSANDBOX_EGRESS_NAMESERVER_EXEMPT"
+	EnvBlockDoH443              = "OPENSANDBOX_EGRESS_BLOCK_DOH_443"
+	EnvDoHBlocklist             = "OPENSANDBOX_EGRESS_DOH_BLOCKLIST"
+	EnvEgressMode               = "OPENSANDBOX_EGRESS_MODE"
+	EnvEgressHTTPAddr           = "OPENSANDBOX_EGRESS_HTTP_ADDR"
+	EnvEgressAPIProxyEnabled    = "OPENSANDBOX_EGRESS_API_PROXY_ENABLED"
+	EnvEgressAPIProxyListenAddr = "OPENSANDBOX_EGRESS_API_PROXY_LISTEN_ADDR"
+	EnvEgressToken              = "OPENSANDBOX_EGRESS_TOKEN"
+	EnvEgressRules              = "OPENSANDBOX_EGRESS_RULES"
+	EnvEgressPolicyFile         = "OPENSANDBOX_EGRESS_POLICY_FILE"
+	EnvEgressLogLevel           = "OPENSANDBOX_EGRESS_LOG_LEVEL"
+	EnvMaxEgressRules           = "OPENSANDBOX_EGRESS_MAX_RULES"
+	EnvBlockedWebhook           = "OPENSANDBOX_EGRESS_DENY_WEBHOOK"
+	EnvSandboxID                = "OPENSANDBOX_EGRESS_SANDBOX_ID"
+	EnvEgressMetricsExtraAttrs  = "OPENSANDBOX_EGRESS_METRICS_EXTRA_ATTRS"
+	EnvNameserverExempt         = "OPENSANDBOX_EGRESS_NAMESERVER_EXEMPT"
 
 	// Python mitmproxy (mitmdump) transparent mode — Linux + CAP_NET_ADMIN only.
 	EnvMitmproxyTransparent      = "OPENSANDBOX_EGRESS_MITMPROXY_TRANSPARENT"
@@ -58,6 +60,7 @@ const (
 const (
 	DefaultEgressServerAddr      = ":18080"
 	DefaultMitmproxyPort         = 18081
+	DefaultEgressAPIProxyAddr    = "127.0.0.1:18082"
 	ResolvNameserverCap          = 10
 	DefaultMaxEgressRules        = 4096
 	DefaultDNSUpstreamTimeoutSec = 5
