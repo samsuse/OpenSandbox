@@ -52,9 +52,10 @@ type NetworkPolicy struct {
 }
 
 type APIProxy struct {
-	Enabled  bool             `json:"enabled"`
-	Identity APIProxyIdentity `json:"identity,omitempty"`
-	Routes   []APIProxyRoute  `json:"routes,omitempty"`
+	Enabled   bool             `json:"enabled"`
+	Identity  APIProxyIdentity `json:"identity,omitempty"`
+	AuthToken string           `json:"auth_token,omitempty"`
+	Routes    []APIProxyRoute  `json:"routes,omitempty"`
 }
 
 type APIProxyIdentity struct {
@@ -181,6 +182,7 @@ func normalizeAPIProxy(p *NetworkPolicy) error {
 	}
 	if !p.APIProxy.Enabled {
 		p.APIProxy.Identity = APIProxyIdentity{}
+		p.APIProxy.AuthToken = ""
 		p.APIProxy.Routes = nil
 		return nil
 	}
@@ -203,7 +205,7 @@ func normalizeAPIProxy(p *NetworkPolicy) error {
 			return fmt.Errorf("duplicate api_proxy path_prefix %q", route.PathPrefix)
 		}
 		seenPrefixes[route.PathPrefix] = struct{}{}
-		normalizedUpstream, err := validateAPIProxyUpstream(route.UpstreamURL)
+		normalizedUpstream, err := validateAPIProxyUpstream(route.UpstreamURL, p.APIProxy.AuthToken != "")
 		if err != nil {
 			return fmt.Errorf("invalid api_proxy upstream_url %q: %w", route.UpstreamURL, err)
 		}
@@ -235,19 +237,26 @@ func validateAPIProxyPathPrefix(pathPrefix string) error {
 	return nil
 }
 
-func validateAPIProxyUpstream(raw string) (string, error) {
+func validateAPIProxyUpstream(raw string, hasAuthToken bool) (string, error) {
 	parsed, err := url.Parse(raw)
 	if err != nil {
 		return "", err
 	}
-	if parsed.Scheme != "http" {
-		return "", fmt.Errorf("scheme must be http")
+	if !slices.Contains([]string{"http", "https"}, parsed.Scheme) {
+		return "", fmt.Errorf("scheme must be http or https")
 	}
 	if parsed.User != nil {
 		return "", fmt.Errorf("credentials are not allowed")
 	}
-	if parsed.Hostname() == "" || !strings.HasSuffix(parsed.Hostname(), ".svc.cluster.local") {
-		return "", fmt.Errorf("host must target *.svc.cluster.local")
+	if parsed.Hostname() == "" {
+		return "", fmt.Errorf("host cannot be empty")
+	}
+	isInternal := strings.HasSuffix(parsed.Hostname(), ".svc.cluster.local")
+	if parsed.Scheme == "https" && !hasAuthToken {
+		return "", fmt.Errorf("https upstream requires auth_token")
+	}
+	if !isInternal && !hasAuthToken {
+		return "", fmt.Errorf("external upstream requires auth_token")
 	}
 	if !slices.Contains([]string{"", "/"}, parsed.EscapedPath()) {
 		return "", fmt.Errorf("upstream_url must not include a path")
@@ -255,7 +264,7 @@ func validateAPIProxyUpstream(raw string) (string, error) {
 	if parsed.RawQuery != "" || parsed.Fragment != "" {
 		return "", fmt.Errorf("upstream_url must not include query or fragment")
 	}
-	return "http://" + parsed.Host, nil
+	return parsed.Scheme + "://" + parsed.Host, nil
 }
 
 // WithExtraAllowIPs returns a copy of the policy with additional allow rules for each IP.

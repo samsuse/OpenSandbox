@@ -132,6 +132,77 @@ func TestHandlerStripsForgedHeadersAndInjectsTrustedIdentity(t *testing.T) {
 	require.Empty(t, seenHeaders.Get("X-Forwarded-For"))
 }
 
+func TestHandlerInjectsAuthTokenWhenPresent(t *testing.T) {
+	var seenHeaders http.Header
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seenHeaders = r.Header.Clone()
+		_, _ = io.WriteString(w, "ok")
+	}))
+	defer upstream.Close()
+
+	reader := &stubPolicyReader{
+		current: &policy.NetworkPolicy{
+			APIProxy: &policy.APIProxy{
+				Enabled: true,
+				Identity: policy.APIProxyIdentity{
+					Organization:   "acme",
+					OrganizationID: "org-123",
+					UserEmail:      "alice@example.com",
+				},
+				AuthToken: "trusted-service-token",
+				Routes: []policy.APIProxyRoute{{
+					PathPrefix:  "/api/reason/",
+					UpstreamURL: upstream.URL,
+				}},
+			},
+		},
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "http://localhost/api/reason/v2/detail", nil)
+	req.Header.Set("Authorization", "Bearer sandbox-forged")
+	w := httptest.NewRecorder()
+
+	NewHandler(reader).ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, "Bearer trusted-service-token", seenHeaders.Get("Authorization"))
+	require.Equal(t, "acme", seenHeaders.Get("CipherOwl-Organization"))
+}
+
+func TestHandlerOmitsAuthorizationWhenNoToken(t *testing.T) {
+	var seenHeaders http.Header
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seenHeaders = r.Header.Clone()
+		_, _ = io.WriteString(w, "ok")
+	}))
+	defer upstream.Close()
+
+	reader := &stubPolicyReader{
+		current: &policy.NetworkPolicy{
+			APIProxy: &policy.APIProxy{
+				Enabled: true,
+				Identity: policy.APIProxyIdentity{
+					Organization:   "acme",
+					OrganizationID: "org-123",
+					UserEmail:      "alice@example.com",
+				},
+				Routes: []policy.APIProxyRoute{{
+					PathPrefix:  "/api/reason/",
+					UpstreamURL: upstream.URL,
+				}},
+			},
+		},
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "http://localhost/api/reason/v2/detail", nil)
+	w := httptest.NewRecorder()
+
+	NewHandler(reader).ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Empty(t, seenHeaders.Get("Authorization"))
+}
+
 func TestHandlerUsesLongestPrefixMatch(t *testing.T) {
 	var firstHits, secondHits int
 	first := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

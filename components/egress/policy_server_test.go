@@ -171,7 +171,7 @@ func TestHandleGet_RedactsAPIProxyIdentity(t *testing.T) {
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	body, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
-	require.Contains(t, string(body), `"api_proxy":{"enabled":true,"identity_ready":true,"route_count":1}`)
+	require.Contains(t, string(body), `"api_proxy":{"enabled":true,"identity_ready":true,"auth_token_set":false,"route_count":1}`)
 	require.NotContains(t, string(body), "alice@example.com")
 	require.NotContains(t, string(body), "org-123")
 }

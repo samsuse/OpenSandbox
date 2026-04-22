@@ -138,7 +138,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad_upstream_request", http.StatusBadGateway)
 		return
 	}
-	copyHeaders(upstreamReq.Header, r.Header, current.APIProxy.Identity, h.userAgent)
+	copyHeaders(upstreamReq.Header, r.Header, current.APIProxy, h.userAgent)
 
 	resp, err := h.client.Do(upstreamReq)
 	if err != nil {
@@ -178,7 +178,7 @@ func isCanonicalPath(path string) bool {
 	return true
 }
 
-func copyHeaders(dst, src http.Header, identity policy.APIProxyIdentity, userAgent string) {
+func copyHeaders(dst, src http.Header, proxy *policy.APIProxy, userAgent string) {
 	for key, values := range src {
 		lower := strings.ToLower(key)
 		if _, blocked := strippedRequestHeaders[lower]; blocked {
@@ -192,9 +192,12 @@ func copyHeaders(dst, src http.Header, identity policy.APIProxyIdentity, userAge
 		}
 	}
 
-	dst.Set("CipherOwl-Organization", identity.Organization)
-	dst.Set("CipherOwl-Organization-Id", identity.OrganizationID)
-	dst.Set("CipherOwl-User-Email", identity.UserEmail)
+	dst.Set("CipherOwl-Organization", proxy.Identity.Organization)
+	dst.Set("CipherOwl-Organization-Id", proxy.Identity.OrganizationID)
+	dst.Set("CipherOwl-User-Email", proxy.Identity.UserEmail)
+	if proxy.AuthToken != "" {
+		dst.Set("Authorization", "Bearer "+proxy.AuthToken)
+	}
 	dst.Set("User-Agent", userAgent)
 }
 
