@@ -89,21 +89,28 @@ func ParseValidatedEgressRule(action, target string) (EgressRule, error) {
 	return p.Egress[0], nil
 }
 
-// MergeAlwaysOverlay prepends always-deny, then always-allow, then user egress.
-// First matching domain rule in Evaluate wins; deny.always therefore overrides
-// user rules and allow.always for the same target. Between two always files,
-// deny entries are ordered before allow entries so deny wins on duplicate targets.
+// MergeAlwaysOverlay prepends always-deny, then always-allow, then API proxy
+// upstream allow rules, then user egress.  First matching domain rule in
+// Evaluate wins; deny.always therefore overrides everything else for the same
+// target.  API proxy upstream rules ensure the sidecar's own HTTP client can
+// reach its configured upstreams without the caller having to list them in the
+// user egress policy.
 func MergeAlwaysOverlay(user *NetworkPolicy, alwaysDeny, alwaysAllow []EgressRule) *NetworkPolicy {
 	if user == nil {
 		user = DefaultDenyPolicy()
 	}
 	out := *user
 	out.Egress = append([]EgressRule(nil), user.Egress...)
-	n := len(alwaysDeny) + len(alwaysAllow) + len(out.Egress)
+	proxyRules := user.APIProxyUpstreamRules()
+	n := len(alwaysDeny) + len(alwaysAllow) + len(proxyRules) + len(out.Egress)
 	merged := make([]EgressRule, 0, n)
 	merged = append(merged, alwaysDeny...)
 	merged = append(merged, alwaysAllow...)
+	merged = append(merged, proxyRules...)
 	merged = append(merged, out.Egress...)
 	out.Egress = merged
+	if len(proxyRules) > 0 {
+		log.Infof("auto-allowing %d API proxy upstream hostname(s) for DNS/nft", len(proxyRules))
+	}
 	return ensureDefaults(&out)
 }

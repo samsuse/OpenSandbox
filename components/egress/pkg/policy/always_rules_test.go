@@ -101,6 +101,55 @@ func TestAlwaysRuleLoader_RefreshIntervalAndReloadByMTime(t *testing.T) {
 	require.Equal(t, "2.2.2.2", deny[0].Target)
 }
 
+func TestMergeAlwaysOverlay_IncludesAPIProxyUpstreams(t *testing.T) {
+	user, err := ParsePolicy(`{
+		"defaultAction":"deny",
+		"egress":[{"action":"allow","target":"pypi.org"}],
+		"api_proxy":{
+			"enabled":true,
+			"identity":{"organization":"test","organization_id":"id1","user_email":"u@t.co"},
+			"auth_token":"tok",
+			"routes":[{"path_prefix":"/api/screen/","upstream_url":"https://svc.cipherowl.ai"}]
+		}
+	}`)
+	require.NoError(t, err)
+
+	// user policy must NOT contain the upstream rule
+	require.Equal(t, ActionDeny, user.Evaluate("svc.cipherowl.ai."))
+
+	// merged effective policy must allow the upstream
+	merged := MergeAlwaysOverlay(user, nil, nil)
+	require.Equal(t, ActionAllow, merged.Evaluate("svc.cipherowl.ai."))
+	require.Equal(t, ActionAllow, merged.Evaluate("pypi.org."), "user allow rule still works")
+}
+
+func TestMergeAlwaysOverlay_AlwaysDenyOverridesProxyUpstream(t *testing.T) {
+	user, err := ParsePolicy(`{
+		"defaultAction":"deny",
+		"api_proxy":{
+			"enabled":true,
+			"identity":{"organization":"test","organization_id":"id1","user_email":"u@t.co"},
+			"auth_token":"tok",
+			"routes":[{"path_prefix":"/api/","upstream_url":"https://blocked.example.com"}]
+		}
+	}`)
+	require.NoError(t, err)
+
+	deny, err := ParseValidatedEgressRule(ActionDeny, "blocked.example.com")
+	require.NoError(t, err)
+	merged := MergeAlwaysOverlay(user, []EgressRule{deny}, nil)
+	require.Equal(t, ActionDeny, merged.Evaluate("blocked.example.com."),
+		"always-deny must override api proxy upstream auto-allow")
+}
+
+func TestMergeAlwaysOverlay_NoAPIProxyNoChange(t *testing.T) {
+	user, err := ParsePolicy(`{"defaultAction":"deny","egress":[{"action":"allow","target":"pypi.org"}]}`)
+	require.NoError(t, err)
+	merged := MergeAlwaysOverlay(user, nil, nil)
+	require.Len(t, merged.Egress, 1, "no api_proxy means no synthetic rules added")
+	require.Equal(t, "pypi.org", merged.Egress[0].Target)
+}
+
 func TestAlwaysRuleLoader_DeleteFileRemovesRules(t *testing.T) {
 	dir := t.TempDir()
 	denyPath := filepath.Join(dir, "deny.always")

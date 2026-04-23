@@ -105,3 +105,90 @@ func TestWithExtraAllowIPs(t *testing.T) {
 	require.Same(t, p, p.WithExtraAllowIPs(nil), "WithExtraAllowIPs(nil) should return same policy")
 	require.Same(t, p, p.WithExtraAllowIPs([]netip.Addr{}), "WithExtraAllowIPs([]) should return same policy")
 }
+
+func TestAPIProxyUpstreamRules_NilDisabledEmpty(t *testing.T) {
+	var nilPolicy *NetworkPolicy
+	require.Nil(t, nilPolicy.APIProxyUpstreamRules())
+
+	disabled := &NetworkPolicy{APIProxy: &APIProxy{Enabled: false}}
+	require.Nil(t, disabled.APIProxyUpstreamRules())
+
+	noRoutes := &NetworkPolicy{APIProxy: &APIProxy{Enabled: true, Routes: nil}}
+	require.Nil(t, noRoutes.APIProxyUpstreamRules())
+}
+
+func TestAPIProxyUpstreamRules_SingleUpstream(t *testing.T) {
+	p, err := ParsePolicy(`{
+		"defaultAction":"deny",
+		"egress":[{"action":"allow","target":"pypi.org"}],
+		"api_proxy":{
+			"enabled":true,
+			"identity":{"organization":"test","organization_id":"id1","user_email":"u@t.co"},
+			"auth_token":"tok",
+			"routes":[{"path_prefix":"/api/screen/","upstream_url":"https://svc.cipherowl.ai"}]
+		}
+	}`)
+	require.NoError(t, err)
+	rules := p.APIProxyUpstreamRules()
+	require.Len(t, rules, 1)
+	require.Equal(t, ActionAllow, rules[0].Action)
+	require.Equal(t, "svc.cipherowl.ai", rules[0].Target)
+}
+
+func TestAPIProxyUpstreamRules_Deduplicates(t *testing.T) {
+	p, err := ParsePolicy(`{
+		"defaultAction":"deny",
+		"api_proxy":{
+			"enabled":true,
+			"identity":{"organization":"test","organization_id":"id1","user_email":"u@t.co"},
+			"auth_token":"tok",
+			"routes":[
+				{"path_prefix":"/api/screen/","upstream_url":"https://svc.cipherowl.ai"},
+				{"path_prefix":"/api/reason/","upstream_url":"https://svc.cipherowl.ai"}
+			]
+		}
+	}`)
+	require.NoError(t, err)
+	rules := p.APIProxyUpstreamRules()
+	require.Len(t, rules, 1, "duplicate upstream hostnames should be deduplicated")
+}
+
+func TestAPIProxyUpstreamRules_MultipleDistinctUpstreams(t *testing.T) {
+	p, err := ParsePolicy(`{
+		"defaultAction":"deny",
+		"api_proxy":{
+			"enabled":true,
+			"identity":{"organization":"test","organization_id":"id1","user_email":"u@t.co"},
+			"auth_token":"tok",
+			"routes":[
+				{"path_prefix":"/api/screen/","upstream_url":"https://svc.cipherowl.ai"},
+				{"path_prefix":"/api/config/","upstream_url":"http://config.config-dev.svc.cluster.local"}
+			]
+		}
+	}`)
+	require.NoError(t, err)
+	rules := p.APIProxyUpstreamRules()
+	require.Len(t, rules, 2)
+	targets := map[string]bool{}
+	for _, r := range rules {
+		targets[r.Target] = true
+	}
+	require.True(t, targets["svc.cipherowl.ai"])
+	require.True(t, targets["config.config-dev.svc.cluster.local"])
+}
+
+func TestAPIProxyUpstreamRules_StripsPort(t *testing.T) {
+	p, err := ParsePolicy(`{
+		"defaultAction":"deny",
+		"api_proxy":{
+			"enabled":true,
+			"identity":{"organization":"test","organization_id":"id1","user_email":"u@t.co"},
+			"auth_token":"tok",
+			"routes":[{"path_prefix":"/api/config/","upstream_url":"http://config.svc.cluster.local:8080"}]
+		}
+	}`)
+	require.NoError(t, err)
+	rules := p.APIProxyUpstreamRules()
+	require.Len(t, rules, 1)
+	require.Equal(t, "config.svc.cluster.local", rules[0].Target, "port should be stripped from hostname")
+}

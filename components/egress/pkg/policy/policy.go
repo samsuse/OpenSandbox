@@ -215,6 +215,37 @@ func normalizeAPIProxy(p *NetworkPolicy) error {
 	return nil
 }
 
+// APIProxyUpstreamRules extracts unique hostnames from enabled API proxy
+// routes and returns synthetic allow rules so the DNS proxy and nftables
+// permit the sidecar's own HTTP client to reach its configured upstreams.
+func (p *NetworkPolicy) APIProxyUpstreamRules() []EgressRule {
+	if p == nil || p.APIProxy == nil || !p.APIProxy.Enabled || len(p.APIProxy.Routes) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(p.APIProxy.Routes))
+	var rules []EgressRule
+	for _, route := range p.APIProxy.Routes {
+		parsed, err := url.Parse(route.UpstreamURL)
+		if err != nil {
+			continue
+		}
+		hostname := strings.ToLower(parsed.Hostname())
+		if hostname == "" {
+			continue
+		}
+		if _, ok := seen[hostname]; ok {
+			continue
+		}
+		seen[hostname] = struct{}{}
+		rules = append(rules, EgressRule{
+			Action:     ActionAllow,
+			Target:     hostname,
+			targetKind: targetDomain,
+		})
+	}
+	return rules
+}
+
 func validateAPIProxyPathPrefix(pathPrefix string) error {
 	if pathPrefix == "" {
 		return fmt.Errorf("path_prefix cannot be empty")
